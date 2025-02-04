@@ -13,6 +13,27 @@ def get_feedback_count():
     conn.close()
     return count
 
+def get_top_contributor():
+    db_path = os.path.join(os.path.dirname(__file__), 'feedback.db')
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT email, COUNT(*) as submission_count
+        FROM feedback
+        GROUP BY email
+        ORDER BY submission_count DESC
+        LIMIT 1
+    """)
+    result = cursor.fetchone()
+    conn.close()
+    
+    if result:
+        return {
+            'email': result[0],
+            'count': result[1]
+        }
+    return None
+
 @app.route('/')
 def index():
     count = get_feedback_count()
@@ -27,10 +48,14 @@ def index():
         {'value': 5000, 'percentage': 100}
     ]
     
+    # Get top contributor
+    top_contributor = get_top_contributor()
+    
     return render_template('index.html', 
                          count=count, 
                          percentage=percentage, 
-                         milestones=milestones)
+                         milestones=milestones,
+                         top_contributor=top_contributor)
 
 if __name__ == '__main__':
     app.run(debug=True)

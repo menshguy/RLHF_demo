@@ -54,6 +54,44 @@
             margin-bottom: 20px;
             color: #6c757d;
         }
+        .top-contributor {
+            text-align: center;
+            margin-top: 40px;
+            padding: 20px;
+            background: linear-gradient(135deg, #fdf9e5 0%, #f5e7b9 100%);
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .top-contributor h3 {
+            color: #b8860b;
+            margin-bottom: 15px;
+            font-size: 1.5rem;
+        }
+        .contributor-email {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #333;
+            margin: 10px 0;
+        }
+        .submission-count {
+            font-size: 1.1rem;
+            color: #666;
+        }
+        .star {
+            font-size: 2rem;
+            color: #ffd700;
+            text-shadow: 0 0 5px rgba(255,215,0,0.5);
+            margin-right: 10px;
+        }
+        @keyframes sparkle {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+        .star {
+            display: inline-block;
+            animation: sparkle 2s infinite;
+        }
     </style>
 </head>
 <body>
@@ -84,6 +122,23 @@
                 </div>
                 {% endfor %}
             </div>
+            
+            {% if top_contributor %}
+            <div class="top-contributor">
+                <h3>🏆 Top Contributor 🏆</h3>
+                <div class="contributor-email">
+                    <span class="star">⭐</span>
+                    {{ top_contributor.email }}
+                    <span class="star">⭐</span>
+                </div>
+                <div class="submission-count">
+                    {{ top_contributor.count }} Feedback Submissions
+                </div>
+                <div style="margin-top: 10px; font-style: italic; color: #666;">
+                    Thank you for your valuable contributions!
+                </div>
+            </div>
+            {% endif %}
         </div>
     </div>
     

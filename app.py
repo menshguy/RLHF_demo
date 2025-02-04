@@ -70,6 +70,7 @@ def init_db():
                  (timestamp TEXT,
                   job_text TEXT,
                   candidate_id INTEGER,
+                  email TEXT,
                   overall_score INTEGER,
                   location_match INTEGER,
                   skills_match INTEGER,
@@ -100,13 +101,13 @@ class VectorSearch:
 vector_search = VectorSearch()
 
 # Save feedback
-def save_feedback(job_text, candidate_id, overall_score, location_match, 
+def save_feedback(job_text, candidate_id, email, overall_score, location_match, 
                  skills_match, title_relevance, experience_match):
     conn = sqlite3.connect('feedback.db')
     c = conn.cursor()
     embedding = model.encode([job_text])[0].tobytes()
-    c.execute('''INSERT INTO feedback VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-              (datetime.now().isoformat(), job_text, candidate_id, 
+    c.execute('''INSERT INTO feedback VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+              (datetime.now().isoformat(), job_text, candidate_id, email,
                overall_score, location_match, skills_match, 
                title_relevance, experience_match, embedding))
     conn.commit()
@@ -142,10 +143,10 @@ def get_candidate_id(candidate_choice):
     # Extract ID from the format "ID X - Name (Match Score: Y.YY)"
     return int(candidate_choice.split()[1])
 
-def submit_feedback(job_desc, candidate_id, overall_score, 
+def submit_feedback(job_desc, candidate_id, email, overall_score, 
                    location_match, skills_match, title_relevance, experience_match):
     try:
-        save_feedback(job_desc, int(candidate_id), int(overall_score),
+        save_feedback(job_desc, int(candidate_id), email, int(overall_score),
                      int(location_match), int(skills_match),
                      int(title_relevance), int(experience_match))
         return "Feedback saved successfully!"
@@ -190,6 +191,11 @@ with gr.Blocks(title="AI Recruitment Assistant") as demo:
     with gr.Row():
         with gr.Column():
             candidate_id = gr.Number(label="Selected Candidate ID", interactive=False)
+            email_input = gr.Textbox(
+                label="Your Email",
+                placeholder="Enter your email address",
+                elem_id="email_input"  # Used for JavaScript to access this element
+            )
             overall_score = gr.Slider(minimum=1, maximum=5, step=1, label="Overall Match Score (1-5)")
         with gr.Column():
             location_match = gr.Radio(choices=[1, 2, 3, 4, 5], label="Location Match (1: Poor - 5: Excellent)")
@@ -199,6 +205,26 @@ with gr.Blocks(title="AI Recruitment Assistant") as demo:
     
     feedback_btn = gr.Button("Submit Feedback")
     feedback_output = gr.Textbox(label="Feedback Status")
+    
+    # Add JavaScript for email persistence
+    gr.HTML("""
+    <script>
+        // Load saved email on page load
+        window.addEventListener('load', function() {
+            const savedEmail = localStorage.getItem('userEmail');
+            if (savedEmail) {
+                document.getElementById('email_input').value = savedEmail;
+            }
+        });
+        
+        // Save email when it changes
+        document.addEventListener('input', function(e) {
+            if (e.target.id === 'email_input') {
+                localStorage.setItem('userEmail', e.target.value);
+            }
+        });
+    </script>
+    """)
     
     # Connect components
     search_outputs = [results_output, candidate_dropdown]
@@ -220,6 +246,7 @@ with gr.Blocks(title="AI Recruitment Assistant") as demo:
         inputs=[
             job_input,
             candidate_id,
+            email_input,
             overall_score,
             location_match,
             skills_match,
