@@ -25,6 +25,7 @@ def generate_candidate_data(n_candidates=100):
         candidate = {
             'id': _,
             'name': fake.name(),
+            'location': fake.city(),
             'skills': ', '.join(fake.random_elements(elements=(
                 'Python', 'JavaScript', 'Machine Learning', 'Data Science',
                 'Web Development', 'DevOps', 'Cloud Computing', 'SQL',
@@ -37,7 +38,8 @@ def generate_candidate_data(n_candidates=100):
                 'PhD in Machine Learning',
                 'Bachelor in Engineering',
                 'Master in Business Administration'
-            ))
+            )),
+            'years_experience': random.randint(1, 15)
         }
         candidates.append(candidate)
     return candidates
@@ -47,8 +49,10 @@ def generate_job_descriptions(n_jobs=20):
     for _ in range(n_jobs):
         job = {
             'title': fake.job(),
+            'location': fake.city(),
             'description': fake.text(max_nb_chars=300),
-            'requirements': fake.text(max_nb_chars=200)
+            'requirements': fake.text(max_nb_chars=200),
+            'years_required': random.randint(1, 10)
         }
         jobs.append(job)
     return jobs
@@ -57,9 +61,21 @@ def generate_job_descriptions(n_jobs=20):
 def init_db():
     conn = sqlite3.connect('feedback.db')
     c = conn.cursor()
+    
+    # Drop the table if it exists
+    c.execute('DROP TABLE IF EXISTS feedback')
+    
+    # Create the table with all our feedback columns
     c.execute('''CREATE TABLE IF NOT EXISTS feedback
-                 (timestamp TEXT, job_text TEXT, candidate_id INTEGER, 
-                  score INTEGER, embedding BLOB)''')
+                 (timestamp TEXT,
+                  job_text TEXT,
+                  candidate_id INTEGER,
+                  overall_score INTEGER,
+                  location_match INTEGER,
+                  skills_match INTEGER,
+                  title_relevance INTEGER,
+                  experience_match INTEGER,
+                  embedding BLOB)''')
     conn.commit()
     conn.close()
 
@@ -68,7 +84,7 @@ class VectorSearch:
     def __init__(self):
         self.candidates = generate_candidate_data()
         self.candidate_texts = [
-            f"{c['skills']} {c['experience']} {c['education']}" 
+            f"{c['skills']} {c['experience']} {c['education']} {c['location']} {c['years_experience']} years" 
             for c in self.candidates
         ]
         self.embeddings = model.encode(self.candidate_texts)
@@ -84,63 +100,134 @@ class VectorSearch:
 vector_search = VectorSearch()
 
 # Save feedback
-def save_feedback(job_text, candidate_id, score):
+def save_feedback(job_text, candidate_id, overall_score, location_match, 
+                 skills_match, title_relevance, experience_match):
     conn = sqlite3.connect('feedback.db')
     c = conn.cursor()
     embedding = model.encode([job_text])[0].tobytes()
-    c.execute('''INSERT INTO feedback VALUES (?, ?, ?, ?, ?)''',
-              (datetime.now().isoformat(), job_text, candidate_id, score, embedding))
+    c.execute('''INSERT INTO feedback VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+              (datetime.now().isoformat(), job_text, candidate_id, 
+               overall_score, location_match, skills_match, 
+               title_relevance, experience_match, embedding))
     conn.commit()
     conn.close()
 
 # Gradio interface
+def format_candidate_choice(candidate, score):
+    return f"ID {candidate['id']} - {candidate['name']} (Match Score: {score:.2f})"
+
 def search_candidates(job_description):
     results = vector_search.search(job_description)
-    output = []
+    output_text = []
+    choices = []
+    
     for candidate, score in results:
-        output.append(f"Match Score: {score:.2f}\n")
-        output.append(f"Name: {candidate['name']}\n")
-        output.append(f"Skills: {candidate['skills']}\n")
-        output.append(f"Experience: {candidate['experience']}\n")
-        output.append(f"Education: {candidate['education']}\n")
-        output.append("-" * 50 + "\n")
-    return "".join(output)
+        output_text.append(f"Match Score: {score:.2f}\n")
+        output_text.append(f"Candidate ID: {candidate['id']}\n")
+        output_text.append(f"Name: {candidate['name']}\n")
+        output_text.append(f"Location: {candidate['location']}\n")
+        output_text.append(f"Skills: {candidate['skills']}\n")
+        output_text.append(f"Experience: {candidate['experience']}\n")
+        output_text.append(f"Years of Experience: {candidate['years_experience']}\n")
+        output_text.append(f"Education: {candidate['education']}\n")
+        output_text.append("-" * 50 + "\n")
+        
+        choices.append(format_candidate_choice(candidate, score))
+    
+    return "".join(output_text), gr.Dropdown(choices=choices, label="Select Candidate for Feedback", interactive=True)
 
-def submit_feedback(job_desc, candidate_id, score):
-    save_feedback(job_desc, candidate_id, score)
-    return f"Feedback saved for candidate {candidate_id}"
+def get_candidate_id(candidate_choice):
+    if not candidate_choice:
+        return None
+    # Extract ID from the format "ID X - Name (Match Score: Y.YY)"
+    return int(candidate_choice.split()[1])
+
+def submit_feedback(job_desc, candidate_id, overall_score, 
+                   location_match, skills_match, title_relevance, experience_match):
+    try:
+        save_feedback(job_desc, int(candidate_id), int(overall_score),
+                     int(location_match), int(skills_match),
+                     int(title_relevance), int(experience_match))
+        return "Feedback saved successfully!"
+    except Exception as e:
+        return f"Error saving feedback: {str(e)}"
 
 # Example job descriptions
 example_jobs = generate_job_descriptions(5)
 
 # Create Gradio interface
-demo = gr.Interface(
-    fn=search_candidates,
-    inputs=[
-        gr.Textbox(
-            label="Job Description",
-            placeholder="Enter job description here...",
-            lines=5
-        )
-    ],
-    outputs=gr.Textbox(label="Matching Candidates", lines=10),
-    examples=[[job['description']] for job in example_jobs],
-    title="AI Recruitment Assistant",
-    description="Enter a job description to find matching candidates based on their skills and experience."
-)
-
-# Add feedback interface
-demo2 = gr.Interface(
-    fn=submit_feedback,
-    inputs=[
-        gr.Textbox(label="Job Description"),
-        gr.Number(label="Candidate ID for Feedback"),
-        gr.Slider(minimum=0, maximum=1, step=1, label="Rate Match (0: Poor, 1: Good)")
-    ],
-    outputs=gr.Textbox(label="Feedback Status"),
-    title="Submit Feedback",
-    description="Submit feedback for a candidate."
-)
+with gr.Blocks(title="AI Recruitment Assistant") as demo:
+    gr.Markdown("# AI Recruitment Assistant")
+    
+    with gr.Row():
+        with gr.Column():
+            job_input = gr.Textbox(
+                label="Job Description",
+                placeholder="Enter job description here...",
+                lines=5
+            )
+            search_btn = gr.Button("Search Candidates")
+            
+            # Example selector
+            gr.Examples(
+                examples=[[job['description']] for job in example_jobs],
+                inputs=job_input,
+                label="Example Job Descriptions"
+            )
+    
+    results_output = gr.Textbox(
+        label="Matching Candidates",
+        lines=10,
+        interactive=False
+    )
+    
+    candidate_dropdown = gr.Dropdown(
+        label="Select Candidate for Feedback",
+        interactive=True
+    )
+    
+    gr.Markdown("## Provide Feedback")
+    with gr.Row():
+        with gr.Column():
+            candidate_id = gr.Number(label="Selected Candidate ID", interactive=False)
+            overall_score = gr.Slider(minimum=1, maximum=5, step=1, label="Overall Match Score (1-5)")
+        with gr.Column():
+            location_match = gr.Radio(choices=[1, 2, 3, 4, 5], label="Location Match (1: Poor - 5: Excellent)")
+            skills_match = gr.Radio(choices=[1, 2, 3, 4, 5], label="Skills Match (1: Poor - 5: Excellent)")
+            title_relevance = gr.Radio(choices=[1, 2, 3, 4, 5], label="Job Title Relevance (1: Poor - 5: Excellent)")
+            experience_match = gr.Radio(choices=[1, 2, 3, 4, 5], label="Experience Level Match (1: Poor - 5: Excellent)")
+    
+    feedback_btn = gr.Button("Submit Feedback")
+    feedback_output = gr.Textbox(label="Feedback Status")
+    
+    # Connect components
+    search_outputs = [results_output, candidate_dropdown]
+    search_btn.click(
+        fn=search_candidates,
+        inputs=job_input,
+        outputs=search_outputs
+    )
+    
+    # Update candidate ID when dropdown selection changes
+    candidate_dropdown.change(
+        fn=get_candidate_id,
+        inputs=[candidate_dropdown],
+        outputs=[candidate_id]
+    )
+    
+    feedback_btn.click(
+        fn=submit_feedback,
+        inputs=[
+            job_input,
+            candidate_id,
+            overall_score,
+            location_match,
+            skills_match,
+            title_relevance,
+            experience_match
+        ],
+        outputs=feedback_output
+    )
 
 # Initialize database
 init_db()
@@ -148,4 +235,3 @@ init_db()
 # Launch the app
 if __name__ == "__main__":
     demo.launch()
-    demo2.launch()
